@@ -87,12 +87,12 @@ def getArguments(args):
     cooccurrenceParser = subParsers.add_parser("cooccurrence", help = "Run co-occurrence analyzer")
     cooccurrenceParser.add_argument("-i", "--input", dest = "input", required = True, help = "Input excel file")
     cooccurrenceParser.add_argument("-o", "--output", dest = "output", default = "~/Desktop/cooccurrence.txt", help = "Output file")
-    cooccurrenceParser.add_argument("words", nargs = "+", help = "The words")
+    cooccurrenceParser.add_argument("words", nargs = "*", help = "The words")
     # Cooccurrence entity
     cooccurrenceEntityParser = subParsers.add_parser("cooccurrence-entity", help = "Run co-occurrence entity analyzer")
     cooccurrenceEntityParser.add_argument("-i", "--input", dest = "input", required = True, help = "Input excel file")
     cooccurrenceEntityParser.add_argument("-o", "--output", dest = "output", default = "~/Desktop/cooccurrence-entity.txt", help = "Output file")
-    cooccurrenceEntityParser.add_argument("words", nargs = "+", help = "The words")
+    cooccurrenceEntityParser.add_argument("words", nargs = "*", help = "The words")
     # Done
     return parser.parse_args(args)
 
@@ -106,6 +106,20 @@ def normalizeFilename(filename):
     """Normalize filename
     """
     return expanduser(filename)
+
+def readWords():
+    """Read words
+    """
+    words = []
+    while True:
+        try:
+            print u"输入单词（只输入一个比如USA或者China South Sea）：，不输入直接会车表示完成：",
+            word = raw_input().strip()
+            if not word:
+                return words
+            words.append(word)
+        except EOFError:
+            return words
 
 def getKeyWords(args):
     """Get keywords
@@ -132,8 +146,15 @@ def cooccurrence(args):
     # Run analyzer
     analyzer = NewsAnalyzer(excelInput.countries, excelInput.regions, excelInput.provinces, excelInput.cities)
     analyzer.prepare()
-    logger.info("Start analyze co-occurrence on words: %s", ",".join(args.words))
-    return analyzer.cooccurrence(news, args.words, normalizeFilename(args.output))
+    # Check words
+    if not args.words:
+        # Read words
+        words = readWords()
+    else:
+        words = args.words
+    # Run
+    logger.info("Start analyze co-occurrence on words: %s", ",".join(words))
+    return analyzer.cooccurrence(news, words, normalizeFilename(args.output))
 
 def cooccurrenceEntity(args):
     """Get cooccurrence entity
@@ -146,5 +167,12 @@ def cooccurrenceEntity(args):
     # Run analyzer
     analyzer = NewsAnalyzer(excelInput.countries, excelInput.regions, excelInput.provinces, excelInput.cities)
     analyzer.prepare()
-    logger.info("Start analyze co-occurrence on words: %s", ",".join(args.words))
-    return analyzer.cooccurrenceEntity(news, args.words, normalizeFilename(args.output))
+    # Check words
+    if not args.words:
+        # Read words
+        words = readWords()
+    else:
+        words = args.words
+    # Run
+    logger.info("Start analyze co-occurrence on words: %s", ",".join(words))
+    return analyzer.cooccurrenceEntity(news, words, normalizeFilename(args.output))
