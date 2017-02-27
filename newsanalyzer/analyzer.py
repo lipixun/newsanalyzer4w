@@ -154,6 +154,8 @@ class NewsAnalyzer(object):
         with open(titleFile, "wb") as fd:
             print >>fd, "\t".join([ u"关键词", u"单词个数", u"TF-IDF" ])
             for word, score in sorted(titleKeywords.iteritems(), key = lambda (k, v): v, reverse = True)[: 2000]:
+                if not isinstance(score, float):
+                    continue
                 if isinstance(word, (list, tuple)):
                     length = len(word)
                     word = " ".join(word)
@@ -163,6 +165,8 @@ class NewsAnalyzer(object):
         with open(contentFile, "wb") as fd:
             print >>fd, "\t".join([ u"关键词", u"单词个数", u"TF-IDF" ])
             for word, score in sorted(contentKeywords.iteritems(), key = lambda (k, v): v, reverse = True)[: 2000]:
+                if not isinstance(score, float):
+                    continue
                 if isinstance(word, (list, tuple)):
                     length = len(word)
                     word = " ".join(word)

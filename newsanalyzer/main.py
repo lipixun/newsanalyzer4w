@@ -138,7 +138,7 @@ def readWords():
     words = []
     while True:
         try:
-            print u"输入单词（只输入一个比如USA或者China South Sea）：，不输入直接会车表示完成：",
+            print u"输入单词（只输入一个比如USA或者China South Sea）：，不输入直接回车表示完成：",
             word = raw_input().strip()
             if not word:
                 return words
