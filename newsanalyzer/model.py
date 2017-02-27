@@ -66,11 +66,10 @@ class City(object):
         """
         return "%s: %s" % (self.name, ",".join(self.alias))
 
-
 class News(object):
     """The news
     """
-    def __init__(self, title, content):
+    def __init__(self, title = None, content = None):
         """Create a new News
         """
         self.title = title

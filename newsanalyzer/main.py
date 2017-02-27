@@ -17,12 +17,13 @@ import math
 import logging
 logger = logging.getLogger("newsanalyzer")
 
-from os.path import expanduser
+from os.path import expanduser, isfile
 from argparse import ArgumentParser
 from collections import Counter
 
 from spec import IDFDictFilename
 from utils import nltk, json
+from model import News
 from excelio import ExcelInput
 from analyzer import NewsAnalyzer
 
@@ -81,16 +82,20 @@ def getArguments(args):
     # keyword
     keywordParser = subParsers.add_parser("keyword", help = "Run keyword analyzer")
     keywordParser.add_argument("-i", "--input", dest = "input", required = True, help = "Input excel file")
+    keywordParser.add_argument("--text-title-input", dest = "textTitleInput", help = "The text title input")
+    keywordParser.add_argument("--text-content-input", dest = "textContentInput", help = "The text content input")
     keywordParser.add_argument("--output-title", dest = "outputTitle", default = "~/Desktop/keywords-title.txt", help = "Mined from title output file")
     keywordParser.add_argument("--output-content", dest = "outputContent", default = "~/Desktop/keywords-content.txt", help = "Mined from content output file")
     # Cooccurrence
     cooccurrenceParser = subParsers.add_parser("cooccurrence", help = "Run co-occurrence analyzer")
     cooccurrenceParser.add_argument("-i", "--input", dest = "input", required = True, help = "Input excel file")
+    cooccurrenceParser.add_argument("--text-content-input", dest = "textContentInput", help = "The text content input")
     cooccurrenceParser.add_argument("-o", "--output", dest = "output", default = "~/Desktop/cooccurrence.txt", help = "Output file")
     cooccurrenceParser.add_argument("words", nargs = "*", help = "The words")
     # Cooccurrence entity
     cooccurrenceEntityParser = subParsers.add_parser("cooccurrence-entity", help = "Run co-occurrence entity analyzer")
     cooccurrenceEntityParser.add_argument("-i", "--input", dest = "input", required = True, help = "Input excel file")
+    cooccurrenceEntityParser.add_argument("--text-content-input", dest = "textContentInput", help = "The text content input")
     cooccurrenceEntityParser.add_argument("-o", "--output", dest = "output", default = "~/Desktop/cooccurrence-entity.txt", help = "Output file")
     cooccurrenceEntityParser.add_argument("words", nargs = "*", help = "The words")
     # Done
@@ -106,6 +111,26 @@ def normalizeFilename(filename):
     """Normalize filename
     """
     return expanduser(filename)
+
+def loadTitleTexts(titleTextFile):
+    """Load title texts from file
+    """
+    if isfile(titleTextFile):
+        texts = []
+        with open(titleTextFile, "rb") as fd:
+            for content in fd:
+                texts.append(unicode(content))
+        return texts
+
+def loadContentTexts(contentTextFile):
+    """Load content texts from file
+    """
+    if isfile(contentTextFile):
+        texts = []
+        with open(contentTextFile, "rb") as fd:
+            for content in fd:
+                texts.append(unicode(content))
+        return texts
 
 def readWords():
     """Read words
@@ -129,6 +154,16 @@ def getKeyWords(args):
     excelInput = ExcelInput(args.input)
     # Load news
     news = loadNews(excelInput)
+    if args.textTitleInput:
+        titles = loadTitleTexts(args.textTitleInput)
+        if titles:
+            news.extend([ News(title = x) for x in titles ])
+        logger.info("Load [%d] lines from text title input", len(titles) if titles else 0)
+    if args.textContentInput:
+        contents = loadContentTexts(args.textContentInput)
+        if contents:
+            news.extend([ News(content = x) for x in contents ])
+        logger.info("Load [%d] lines from text content input", len(contents) if contents else 0)
     # Run analyzer
     analyzer = NewsAnalyzer(excelInput.countries, excelInput.regions, excelInput.provinces, excelInput.cities)
     analyzer.prepare()
@@ -143,6 +178,11 @@ def cooccurrence(args):
     excelInput = ExcelInput(args.input)
     # Load news
     news = loadNews(excelInput)
+    if args.textContentInput:
+        contents = loadContentTexts(args.textContentInput)
+        if contents:
+            news.extend([ News(content = x) for x in contents ])
+        logger.info("Load [%d] lines from text content input", len(contents) if contents else 0)
     # Run analyzer
     analyzer = NewsAnalyzer(excelInput.countries, excelInput.regions, excelInput.provinces, excelInput.cities)
     analyzer.prepare()
@@ -164,6 +204,11 @@ def cooccurrenceEntity(args):
     excelInput = ExcelInput(args.input)
     # Load news
     news = loadNews(excelInput)
+    if args.textContentInput:
+        contents = loadContentTexts(args.textContentInput)
+        if contents:
+            news.extend([ News(content = x) for x in contents ])
+        logger.info("Load [%d] lines from text content input", len(contents) if contents else 0)
     # Run analyzer
     analyzer = NewsAnalyzer(excelInput.countries, excelInput.regions, excelInput.provinces, excelInput.cities)
     analyzer.prepare()

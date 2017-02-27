@@ -114,34 +114,36 @@ class NewsAnalyzer(object):
         stopwords = self.loadStopwordSet()
         # Get tf
         for news in newsList:
-            # Title
-            words = list(self.tokenize(news.title, stopwords))
-            # Single
-            for word in words:
-                titleTF[word] += 1
-            # Double
-            for i in xrange(0, len(words) - 1):
-                titleTF[(words[i].lower(), words[i + 1].lower())] += 1
-            # Triple
-            for i in xrange(0, len(words) - 2):
-                titleTF[(words[i].lower(), words[i + 1].lower(), words[i + 2].lower())] += 1
-            # Four
-            for i in xrange(0, len(words) - 3):
-                titleTF[(words[i].lower(), words[i + 1].lower(), words[i + 2].lower(), words[i + 3].lower())] += 1
-            # Content
-            words = list(self.tokenize(news.content, stopwords))
-            # Single
-            for word in words:
-                contentTF[word] += 1
-            # Double
-            for i in xrange(0, len(words) - 1):
-                contentTF[(words[i].lower(), words[i + 1].lower())] += 1
-            # Triple
-            for i in xrange(0, len(words) - 2):
-                contentTF[(words[i].lower(), words[i + 1].lower(), words[i + 2].lower())] += 1
-            # Four
-            for i in xrange(0, len(words) - 3):
-                contentTF[(words[i].lower(), words[i + 1].lower(), words[i + 2].lower(), words[i + 3].lower())] += 1
+            if news.title:
+                # Title
+                words = list(self.tokenize(news.title, stopwords))
+                # Single
+                for word in words:
+                    titleTF[word] += 1
+                # Double
+                for i in xrange(0, len(words) - 1):
+                    titleTF[(words[i].lower(), words[i + 1].lower())] += 1
+                # Triple
+                for i in xrange(0, len(words) - 2):
+                    titleTF[(words[i].lower(), words[i + 1].lower(), words[i + 2].lower())] += 1
+                # Four
+                for i in xrange(0, len(words) - 3):
+                    titleTF[(words[i].lower(), words[i + 1].lower(), words[i + 2].lower(), words[i + 3].lower())] += 1
+            if news.content:
+                # Content
+                words = list(self.tokenize(news.content, stopwords))
+                # Single
+                for word in words:
+                    contentTF[word] += 1
+                # Double
+                for i in xrange(0, len(words) - 1):
+                    contentTF[(words[i].lower(), words[i + 1].lower())] += 1
+                # Triple
+                for i in xrange(0, len(words) - 2):
+                    contentTF[(words[i].lower(), words[i + 1].lower(), words[i + 2].lower())] += 1
+                # Four
+                for i in xrange(0, len(words) - 3):
+                    contentTF[(words[i].lower(), words[i + 1].lower(), words[i + 2].lower(), words[i + 3].lower())] += 1
         # Get tf-idf
         titleKeywords, contentKeywords = {}, {}
         for word, tf in titleTF.iteritems():
@@ -184,42 +186,43 @@ class NewsAnalyzer(object):
         keywords = {}
         # Get tf
         for news in newsList:
-            paragraphs = [ x.strip() for x in news.content.split("\n") ]
-            # Calculate on each paragraph
-            for paragraph in paragraphs:
-                # Tokenize the paragraph
-                words = list(self.tokenize(paragraph, stopwords))
-                # Search for each key words
-                keywordsWithIndexes = {}
-                for node, startIndex in tree.search(words):
-                    keyword = node.attrs["word"]
-                    if not keyword in keywordsWithIndexes:
-                        keywordsWithIndexes[keyword] = [ (startIndex, len(node.attrs["words"])) ]
-                    else:
-                        keywordsWithIndexes[keyword].append((startIndex, len(node.attrs["words"])))
-                # Caculate the related words except the keyword itself
-                for keyword, indices in keywordsWithIndexes.iteritems():
-                    # Get counter of the keyword
-                    if not keyword in keywords:
-                        keywords[keyword] = Counter()
-                    continuousWords = []
-                    counter = keywords[keyword]
-                    for i, word in enumerate(words):
-                        for startIndex, length in indices:
-                            if i >= startIndex and i < startIndex + length:
-                                # Fall in the keyword
-                                continuousWords = []
-                                break
+            if news.content:
+                paragraphs = [ x.strip() for x in news.content.split("\n") ]
+                # Calculate on each paragraph
+                for paragraph in paragraphs:
+                    # Tokenize the paragraph
+                    words = list(self.tokenize(paragraph, stopwords))
+                    # Search for each key words
+                    keywordsWithIndexes = {}
+                    for node, startIndex in tree.search(words):
+                        keyword = node.attrs["word"]
+                        if not keyword in keywordsWithIndexes:
+                            keywordsWithIndexes[keyword] = [ (startIndex, len(node.attrs["words"])) ]
                         else:
-                            # Good
-                            counter[word] += 1
-                            continuousWords.append(word)
-                            if len(continuousWords) > 4:
-                                del continuousWords[0]
-                            for i in range(4):
-                                if len(continuousWords) - i <= 1:
+                            keywordsWithIndexes[keyword].append((startIndex, len(node.attrs["words"])))
+                    # Caculate the related words except the keyword itself
+                    for keyword, indices in keywordsWithIndexes.iteritems():
+                        # Get counter of the keyword
+                        if not keyword in keywords:
+                            keywords[keyword] = Counter()
+                        continuousWords = []
+                        counter = keywords[keyword]
+                        for i, word in enumerate(words):
+                            for startIndex, length in indices:
+                                if i >= startIndex and i < startIndex + length:
+                                    # Fall in the keyword
+                                    continuousWords = []
                                     break
-                                counter[tuple(continuousWords[i:])] += 1
+                            else:
+                                # Good
+                                counter[word] += 1
+                                continuousWords.append(word)
+                                if len(continuousWords) > 4:
+                                    del continuousWords[0]
+                                for i in range(4):
+                                    if len(continuousWords) - i <= 1:
+                                        break
+                                    counter[tuple(continuousWords[i:])] += 1
         # Get for each trunk
         with open(outputFile, "wb") as fd:
             print >>fd, "\t".join([ u"关键词", u"相关词汇", u"单词个数", u"TF-IDF" ])
@@ -249,37 +252,38 @@ class NewsAnalyzer(object):
         keyword2Entities = {}
         # Get tf
         for news in newsList:
-            paragraphs = [ x.strip() for x in news.content.split("\n") ]
-            # Calculate on each paragraph
-            for paragraph in paragraphs:
-                # Tokenize the paragraph
-                words = list(self.tokenize(paragraph, stopwords))
-                # Search for each key words
-                keywords = Set()
-                entities = {}
-                for node, _ in tree.search(words):
-                    # Check keyword
-                    keyword = node.attrs.get("word")
-                    if keyword:
-                        keywords.add(keyword)
-                    # Check entities
-                    country = node.attrs.get(KeyCountry)
-                    if country:
-                        if not KeyCountry in entities:
-                            entities[KeyCountry] = Counter()
-                        entities[KeyCountry][country.name] += 1
-                # Add to global
-                for keyword in keywords:
-                    if not keyword in keyword2Entities:
-                        ents = {}
-                        keyword2Entities[keyword] = ents
-                    else:
-                        ents = keyword2Entities[keyword]
-                    for entType, counter in entities.iteritems():
-                        if not entType in ents:
-                            ents[entType] = Counter()
-                        for key, value in counter.iteritems():
-                            ents[entType][key] += value
+            if news.content:
+                paragraphs = [ x.strip() for x in news.content.split("\n") ]
+                # Calculate on each paragraph
+                for paragraph in paragraphs:
+                    # Tokenize the paragraph
+                    words = list(self.tokenize(paragraph, stopwords))
+                    # Search for each key words
+                    keywords = Set()
+                    entities = {}
+                    for node, _ in tree.search(words):
+                        # Check keyword
+                        keyword = node.attrs.get("word")
+                        if keyword:
+                            keywords.add(keyword)
+                        # Check entities
+                        country = node.attrs.get(KeyCountry)
+                        if country:
+                            if not KeyCountry in entities:
+                                entities[KeyCountry] = Counter()
+                            entities[KeyCountry][country.name] += 1
+                    # Add to global
+                    for keyword in keywords:
+                        if not keyword in keyword2Entities:
+                            ents = {}
+                            keyword2Entities[keyword] = ents
+                        else:
+                            ents = keyword2Entities[keyword]
+                        for entType, counter in entities.iteritems():
+                            if not entType in ents:
+                                ents[entType] = Counter()
+                            for key, value in counter.iteritems():
+                                ents[entType][key] += value
         # Get for each trunk
         with open(outputFile, "wb") as fd:
             print >>fd, "\t".join([ u"关键词", u"相关实体类型", u"相关实体", u"实体出现次数" ])
