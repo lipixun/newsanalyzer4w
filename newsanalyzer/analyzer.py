@@ -16,7 +16,7 @@ from sets import Set
 from collections import Counter
 
 from trie import TrieTree
-from spec import IDFDictFilename, MissingValueIDF, DropWords, KeyCountry
+from spec import IDFDictFilename, MissingValueIDF, DropWords, KeyCountry, KeyRegion, KeyProvince, KeyCity
 from utils import nltk, json
 
 PunctuationRegex = re.compile(r"""^[\!\"\#\$\%\&\'\(\)\*\+\,\-\.\/\:\;\<\=\>\?\@\[\\\]\^\_\`\{\|\}\~]+$""")
@@ -77,6 +77,15 @@ class NewsAnalyzer(object):
         for country in self.countries:
             for name in country.alias:
                 tree.add([ x.strip() for x in name.split(" ") if x.strip() ], **{ KeyCountry: country })
+        for region in self.regions:
+            for name in region.alias:
+                tree.add([ x.strip() for x in name.split(" ") if x.strip() ], **{ KeyRegion: region })
+        for province in self.provinces:
+            for name in province.alias:
+                tree.add([ x.strip() for x in name.split(" ") if x.strip() ], **{ KeyProvince: province })
+        for city in self.cities:
+            for name in city.alias:
+                tree.add([ x.strip() for x in name.split(" ") if x.strip() ], **{ KeyCity: city })
         # Done
         return tree
 
@@ -112,7 +121,8 @@ class NewsAnalyzer(object):
         titleTF, contentTF = Counter(), Counter()
         # Get the stop words
         stopwords = self.loadStopwordSet()
-        # Get tf
+        # Get common keywords
+        self.logger.info("Start analyze")
         for news in newsList:
             if news.title:
                 # Title
@@ -151,6 +161,7 @@ class NewsAnalyzer(object):
         for word, tf in contentTF.iteritems():
             contentKeywords[word] = tf * idf.get(word, MissingValueIDF)
         # Write out
+        self.logger.info("Write output")
         with open(titleFile, "wb") as fd:
             print >>fd, "\t".join([ u"关键词", u"单词个数", u"TF-IDF" ])
             for word, score in sorted(titleKeywords.iteritems(), key = lambda (k, v): v, reverse = True)[: 2000]:
@@ -174,124 +185,179 @@ class NewsAnalyzer(object):
                     length = 1
                 print >>fd, "%s\t%d\t%.4f" % (word, length, score)
 
-    def cooccurrence(self, newsList, words, outputFile):
+    def cooccurrence(self, newsList, keywords, outputFile):
         """Analyze the news cooccurrence words
+        Args:
+            newsList([ News ]): The news
+            keywords([ NamedKeyword ]): The keywords
+            outputFile(str): The output file
         """
         # Get the stop words
         stopwords = self.loadStopwordSet()
-        # Build trie tree dict
+        # Build trie tree of key words
         tree = TrieTree()
-        for word in words:
-            w = list(self.tokenize(word, stopwords))
-            if w:
-                tree.add(w, word = word, words = w)
+        for namedKeyword in keywords:
+            for word in namedKeyword.words:
+                terms = list(self.tokenize(word, stopwords))
+                if terms:
+                    tree.add(terms, keyword = namedKeyword, word = word, _terms = terms)
         # Load idf
         idf = self.loadIDFDict()
         keywords = {}
-        # Get tf
-        for news in newsList:
-            if news.content:
-                paragraphs = [ x.strip() for x in news.content.split("\n") ]
-                # Calculate on each paragraph
-                for paragraph in paragraphs:
-                    # Tokenize the paragraph
-                    words = list(self.tokenize(paragraph, stopwords))
-                    # Search for each key words
-                    keywordsWithIndexes = {}
-                    for node, startIndex in tree.search(words):
-                        keyword = node.attrs["word"]
-                        if not keyword in keywordsWithIndexes:
-                            keywordsWithIndexes[keyword] = [ (startIndex, len(node.attrs["words"])) ]
-                        else:
-                            keywordsWithIndexes[keyword].append((startIndex, len(node.attrs["words"])))
-                    # Caculate the related words except the keyword itself
-                    for keyword, indices in keywordsWithIndexes.iteritems():
-                        # Get counter of the keyword
-                        if not keyword in keywords:
-                            keywords[keyword] = Counter()
-                        continuousWords = []
-                        counter = keywords[keyword]
-                        for i, word in enumerate(words):
-                            for startIndex, length in indices:
-                                if i >= startIndex and i < startIndex + length:
-                                    # Fall in the keyword
-                                    continuousWords = []
-                                    break
-                            else:
-                                # Good
-                                counter[word] += 1
-                                continuousWords.append(word)
-                                if len(continuousWords) > 4:
-                                    del continuousWords[0]
-                                for i in range(4):
-                                    if len(continuousWords) - i <= 1:
-                                        break
-                                    counter[tuple(continuousWords[i:])] += 1
+        # Get words
+        self.logger.info("Start analyze")
+        for terms in self.iterTerms(newsList, stopwords, perParagraph = True):
+            # Search for all known keywords
+            keywordsInParagraph = {}
+            for node, startIndex in tree.search(terms):
+                namedKeyword = node.attrs["keyword"]
+                if not namedKeyword.name in keywordsInParagraph:
+                    keywordsInParagraph[namedKeyword.name] = []
+                keywordsInParagraph[namedKeyword.name].append((startIndex, len(node.attrs["_terms"])))
+            # Caculate the related words except the keyword itself
+            for keywordName, indices in keywordsInParagraph.iteritems():
+                # Get counter of the keyword
+                if not keywordName in keywords:
+                    keywords[keywordName] = Counter()
+                counter = keywords[keywordName]
+                continuousTerms = []
+                # Get the cooccurrence terms
+                for i, term in enumerate(terms):
+                    for startIndex, length in indices:
+                        if i >= startIndex and i < startIndex + length:
+                            # Fall in the keyword
+                            continuousTerms = []
+                            break
+                    else:
+                        # Good
+                        counter[term] += 1
+                        continuousTerms.append(term)
+                        if len(continuousTerms) > 4:
+                            del continuousTerms[0]
+                        for i in range(4):
+                            if len(continuousTerms) - i <= 1:
+                                break
+                            counter[tuple(continuousTerms[i:])] += 1
         # Get for each trunk
+        self.logger.info("Write output")
         with open(outputFile, "wb") as fd:
             print >>fd, "\t".join([ u"关键词", u"相关词汇", u"单词个数", u"TF-IDF" ])
-            for keyword, counter in keywords.iteritems():
-                words = {}
-                for word, tf in counter.iteritems():
-                    words[word] = tf * idf.get(word, MissingValueIDF)
-                for word, score in sorted(words.iteritems(), key = lambda (k, v): v, reverse = True)[: 100]:
+            for keywordName, counter in keywords.iteritems():
+                terms = {}
+                for term, tf in counter.iteritems():
+                    terms[term] = tf * idf.get(term, MissingValueIDF)
+                for word, score in sorted(terms.iteritems(), key = lambda (k, v): v, reverse = True)[: 500]:
                     if isinstance(word, (list, tuple)):
                         length = len(word)
                         word = " ".join(word)
                     else:
                         length = 1
-                    print >>fd, "%s\t%s\t%d\t%.4f" % (keyword, word, length, score)
+                    print >>fd, "%s\t%s\t%d\t%.4f" % (keywordName, word, length, score)
 
-    def cooccurrenceEntity(self, newsList, words, outputFile):
+    def cooccurrenceEntity(self, newsList, keywords, outputFile):
         """Analyze the news cooccurrence words
         """
         # Get the stop words
         stopwords = self.loadStopwordSet()
         # Build entity trie tree
         tree = self.buildEntityTrieTree()
-        for word in words:
-            w = list(self.tokenize(word, stopwords))
-            if w:
-                tree.add(w, word = word, words = w)
-        keyword2Entities = {}
-        # Get tf
-        for news in newsList:
-            if news.content:
-                paragraphs = [ x.strip() for x in news.content.split("\n") ]
-                # Calculate on each paragraph
-                for paragraph in paragraphs:
-                    # Tokenize the paragraph
-                    words = list(self.tokenize(paragraph, stopwords))
-                    # Search for each key words
-                    keywords = Set()
-                    entities = {}
-                    for node, _ in tree.search(words):
-                        # Check keyword
-                        keyword = node.attrs.get("word")
-                        if keyword:
-                            keywords.add(keyword)
-                        # Check entities
-                        country = node.attrs.get(KeyCountry)
-                        if country:
-                            if not KeyCountry in entities:
-                                entities[KeyCountry] = Counter()
-                            entities[KeyCountry][country.name] += 1
-                    # Add to global
-                    for keyword in keywords:
-                        if not keyword in keyword2Entities:
-                            ents = {}
-                            keyword2Entities[keyword] = ents
-                        else:
-                            ents = keyword2Entities[keyword]
-                        for entType, counter in entities.iteritems():
-                            if not entType in ents:
-                                ents[entType] = Counter()
-                            for key, value in counter.iteritems():
-                                ents[entType][key] += value
-        # Get for each trunk
+        for namedKeyword in keywords:
+            for word in namedKeyword.words:
+                terms = list(self.tokenize(word, stopwords))
+                if terms:
+                    tree.add(terms, keyword = namedKeyword)
+        keyword2Entities = { None: {} }
+        # Get words
+        self.logger.info("Start analyze")
+        for terms in self.iterTerms(newsList, stopwords, perParagraph = True):
+            # Search for each key words
+            keywords = Set()
+            entities = {}
+            for node, _ in tree.search(terms):
+                # Check keyword
+                namedKeyword = node.attrs.get("keyword")
+                if namedKeyword:
+                    keywords.add(namedKeyword.name)
+                # Check entities
+                country = node.attrs.get(KeyCountry)
+                if country:
+                    if KeyCountry not in entities:
+                        entities[KeyCountry] = Counter()
+                    entities[KeyCountry][country.name] += 1
+                # Check region
+                region = node.attrs.get(KeyRegion)
+                if region:
+                    if KeyRegion not in entities:
+                        entities[KeyRegion] = Counter()
+                    entities[KeyRegion][region.name] += 1
+                # Check province
+                province = node.attrs.get(KeyProvince)
+                if province:
+                    if KeyProvince not in entities:
+                        entities[KeyProvince] = Counter()
+                    entities[KeyProvince][province.name] += 1
+                # Check city
+                city = node.attrs.get(KeyCity)
+                if city:
+                    if KeyCity not in entities:
+                        entities[KeyCity] = Counter()
+                    entities[KeyCity][city.name] += 1
+            # Add to global
+            for keyword in [ None ] + list(keywords):
+                if not keyword in keyword2Entities:
+                    keyword2Entities[keyword] = {}
+                ents = keyword2Entities[keyword]
+                for entType, counter in entities.iteritems():
+                    if not entType in ents:
+                        ents[entType] = Counter()
+                    for key, value in counter.iteritems():
+                        ents[entType][key] += value
+        # Write out
+        self.logger.info("Write output")
         with open(outputFile, "wb") as fd:
             print >>fd, "\t".join([ u"关键词", u"相关实体类型", u"相关实体", u"实体出现次数" ])
+            # Country
+            if keyword2Entities[None].get(KeyCountry):
+                for key, value in keyword2Entities[None][KeyCountry].most_common()[: 100]:
+                    print >>fd, "Global\t%s\t%s\t%d" % (KeyCountry, key, value)
+            # Region
+            if keyword2Entities[None].get(KeyRegion):
+                for key, value in keyword2Entities[None][KeyRegion].most_common()[: 100]:
+                    print >>fd, "Global\t%s\t%s\t%d" % (KeyRegion, key, value)
+            # Province
+            if keyword2Entities[None].get(KeyProvince):
+                for key, value in keyword2Entities[None][KeyProvince].most_common()[: 100]:
+                    print >>fd, "Global\t%s\t%s\t%d" % (KeyProvince, key, value)
+            # City
+            if keyword2Entities[None].get(KeyCity):
+                for key, value in keyword2Entities[None][KeyCity].most_common()[: 100]:
+                    print >>fd, "Global\t%s\t%s\t%d" % (KeyCity, key, value)
+            # Keywords
             for keyword, entities in keyword2Entities.iteritems():
+                if not keyword:
+                    continue
                 for entType, counter in entities.iteritems():
                     for key, value in counter.most_common()[: 100]:
                         print >>fd, "%s\t%s\t%s\t%d" % (keyword, entType, key, value)
+
+    def iterTerms(self, newsList, stopwords, perParagraph = False):
+        """Iterate terms per news or per paragraph
+        Yield:
+            [ str ]: The terms
+        """
+        for news in newsList:
+            if not news.content:
+                continue
+            if perParagraph:
+                # Per paragraph
+                for paragraph in [ x.strip() for x in news.content.split("\n") ]:
+                    if paragraph:
+                        # Tokenize the paragraph
+                        terms = list(self.tokenize(paragraph, stopwords))
+                        if terms:
+                            yield terms
+            else:
+                # Per news
+                terms = list(self.tokenize(paragraph, stopwords))
+                if terms:
+                    yield terms

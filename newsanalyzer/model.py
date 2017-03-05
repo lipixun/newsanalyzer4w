@@ -9,6 +9,15 @@
 
 """
 
+class NamedKeyword(object):
+    """The named keyword
+    """
+    def __init__(self, name, words):
+        """Create a new NamedKeyword
+        """
+        self.name = name
+        self.words = words
+
 class Country(object):
     """The country
     """

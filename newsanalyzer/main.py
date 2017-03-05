@@ -23,7 +23,7 @@ from collections import Counter
 
 from spec import IDFDictFilename
 from utils import nltk, json
-from model import News
+from model import News, NamedKeyword
 from excelio import ExcelInput
 from analyzer import NewsAnalyzer
 
@@ -134,17 +134,25 @@ def loadContentTexts(contentTextFile):
 
 def readWords():
     """Read words
+    Returns:
+        [ NamedKeyword ]: The input words
     """
-    words = []
+    print u"输入关键词\n格式说明"
+    print u"* 输入一个单词或者短语。比如USA或者China South Sea"
+    print u"* 输入多个单词或短语，将这多组单词、短语当作一个词汇统计，使用英文逗号分隔。"
+    print u"  比如America, usa。America以及usa两个单词的统计结果会合成为词汇[America,usa]的统计结果"
+    keywords = []
     while True:
         try:
-            print u"输入单词（只输入一个比如USA或者China South Sea）：，不输入直接回车表示完成：",
+            print u"请输入，直接回车表示完成：",
             word = raw_input().strip()
             if not word:
-                return words
-            words.append(word)
+                return keywords
+            words = [ x.strip() for x in word.split(",") if x.strip() ]
+            if words:
+                keywords.append(NamedKeyword(",".join(words), words))
         except EOFError:
-            return words
+            return keywords
 
 def getKeyWords(args):
     """Get keywords
@@ -186,15 +194,19 @@ def cooccurrence(args):
     # Run analyzer
     analyzer = NewsAnalyzer(excelInput.countries, excelInput.regions, excelInput.provinces, excelInput.cities)
     analyzer.prepare()
-    # Check words
+    # Read words
     if not args.words:
         # Read words
-        words = readWords()
+        keywords = readWords()
     else:
-        words = args.words
+        keywords = []
+        for word in args.words:
+            words = [ x.strip() for x in word.split(",") if x.strip() ]
+            if words:
+                keywords.append(NamedKeyword(",".join(words), words))
     # Run
-    logger.info("Start analyze co-occurrence on words: %s", ",".join(words))
-    return analyzer.cooccurrence(news, words, normalizeFilename(args.output))
+    logger.info("Start analyze co-occurrence on words: %s", "|".join([ x.name for x in keywords ]))
+    return analyzer.cooccurrence(news, keywords, normalizeFilename(args.output))
 
 def cooccurrenceEntity(args):
     """Get cooccurrence entity
@@ -212,12 +224,16 @@ def cooccurrenceEntity(args):
     # Run analyzer
     analyzer = NewsAnalyzer(excelInput.countries, excelInput.regions, excelInput.provinces, excelInput.cities)
     analyzer.prepare()
-    # Check words
+    # Read words
     if not args.words:
         # Read words
-        words = readWords()
+        keywords = readWords()
     else:
-        words = args.words
+        keywords = []
+        for word in args.words:
+            words = [ x.strip() for x in word.split(",") if x.strip() ]
+            if words:
+                keywords.append(NamedKeyword(",".join(words), words))
     # Run
-    logger.info("Start analyze co-occurrence on words: %s", ",".join(words))
-    return analyzer.cooccurrenceEntity(news, words, normalizeFilename(args.output))
+    logger.info("Start analyze co-occurrence on words: %s", "|".join([ x.name for x in keywords ]))
+    return analyzer.cooccurrenceEntity(news, keywords, normalizeFilename(args.output))

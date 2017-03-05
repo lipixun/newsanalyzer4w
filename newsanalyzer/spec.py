@@ -22,6 +22,10 @@ SheetCity           = "city"
 SheetNews           = u"数字版"
 
 KeyCountry          = u"国家"
+KeyRegion           = u"地区"
+KeyProvince         = u"省"
+KeyCity             = u"城市"
+
 
 IDFDictFilename     = join(DataPath, "idf.dict")
 
