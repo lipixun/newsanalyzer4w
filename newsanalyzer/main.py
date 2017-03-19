@@ -9,23 +9,54 @@
 
 """
 
-import sys
-reload(sys)
-sys.setdefaultencoding("utf8")
-
 import math
 import logging
-logger = logging.getLogger("newsanalyzer")
 
 from os.path import expanduser, isfile
 from argparse import ArgumentParser
 from collections import Counter
 
-from spec import IDFDictFilename
-from utils import nltk, json
-from model import News, NamedKeyword
-from excelio import ExcelInput
-from analyzer import NewsAnalyzer
+from .spec import IDFDictFilename
+from .utils import nltk, json
+from .model import News, NamedKeyword
+from .excelio import ExcelInput
+from .analyzer import NewsAnalyzer
+
+logger = logging.getLogger("newsanalyzer")
+
+def getArguments(args):
+    """Get arguments from args
+    """
+    parser = ArgumentParser(prog = "newsanalyzer", description = "News Analyzer For WanXuanAo")
+    parser.add_argument("--debug", dest = "debug", default = False, action = "store_true", help = "Enable debug mode")
+    subParsers = parser.add_subparsers(dest = "action")
+    # Prepare
+    _ = subParsers.add_parser("prepare-nltk", help = "Prepare nltk")
+    prepareIDFParser = subParsers.add_parser("prepare-idf", help = "Prepare idf directory")
+    prepareIDFParser.add_argument("-n", "--ngram", dest = "nGram", type = int, default = 6, help = "The nGram")
+    # keyword
+    keywordParser = subParsers.add_parser("keyword", help = "Run keyword analyzer")
+    keywordParser.add_argument("-i", "--input", dest = "input", required = True, help = "Input excel file")
+    keywordParser.add_argument("--text-title-input", dest = "textTitleInput", help = "The text title input")
+    keywordParser.add_argument("--text-content-input", dest = "textContentInput", help = "The text content input")
+    keywordParser.add_argument("-n", "--ngram", dest = "nGram", type = int, default = 6, help = "The nGram")
+    keywordParser.add_argument("--output-title", dest = "outputTitle", default = "~/Desktop/keywords-title", help = "Mined from title output file")
+    keywordParser.add_argument("--output-content", dest = "outputContent", default = "~/Desktop/keywords-content", help = "Mined from content output file")
+    # Cooccurrence
+    cooccurrenceParser = subParsers.add_parser("cooccurrence", help = "Run co-occurrence analyzer")
+    cooccurrenceParser.add_argument("-i", "--input", dest = "input", required = True, help = "Input excel file")
+    cooccurrenceParser.add_argument("--text-content-input", dest = "textContentInput", help = "The text content input")
+    cooccurrenceParser.add_argument("-n", "--ngram", dest = "nGram", type = int, default = 6, help = "The nGram")
+    cooccurrenceParser.add_argument("-o", "--output", dest = "output", default = "~/Desktop/cooccurrence", help = "Output file")
+    cooccurrenceParser.add_argument("words", nargs = "*", help = "The words")
+    # Cooccurrence entity
+    cooccurrenceEntityParser = subParsers.add_parser("cooccurrence-entity", help = "Run co-occurrence entity analyzer")
+    cooccurrenceEntityParser.add_argument("-i", "--input", dest = "input", required = True, help = "Input excel file")
+    cooccurrenceEntityParser.add_argument("--text-content-input", dest = "textContentInput", help = "The text content input")
+    cooccurrenceEntityParser.add_argument("-o", "--output", dest = "output", default = "~/Desktop/cooccurrence-entity", help = "Output file")
+    cooccurrenceEntityParser.add_argument("words", nargs = "*", help = "The words")
+    # Done
+    return parser.parse_args(args)
 
 def main(args):
     """The application main entry
@@ -37,30 +68,9 @@ def main(args):
         logging.basicConfig(format = "%(asctime)s - %(levelname)s - %(name)s - %(message)s", level = logging.INFO)
     # Check actions
     if args.action == "prepare-nltk":
-        logger.info("Start prepare nltk data")
-        nltk.download()
+        prepareNLTK(args)
     elif args.action == "prepare-idf":
-        logger.info("Start prepare idf directory (by calculating on nltk reuters corpus)")
-        counter = Counter()
-        for docWords in nltk.corpus.reuters.sents():
-            # Single word
-            for word in docWords:
-                counter[word.lower()] += 1
-            # Double
-            for i in xrange(0, len(docWords) - 1):
-                counter[(docWords[i].lower(), docWords[i + 1].lower())] += 1
-            # Triple
-            for i in xrange(0, len(docWords) - 2):
-                counter[(docWords[i].lower(), docWords[i + 1].lower(), docWords[i + 2].lower())] += 1
-            # Four
-            for i in xrange(0, len(docWords) - 3):
-                counter[(docWords[i].lower(), docWords[i + 1].lower(), docWords[i + 2].lower(), docWords[i + 3].lower())] += 1
-        idf = {}
-        for word, count in counter.iteritems():
-            if count > 5:
-                idf[word] = math.log(float(len(counter)) / float(count))
-        with open(IDFDictFilename, "wb") as fd:
-            json.dump([ {"w": k, "v": v } for k, v in idf.iteritems() ], fd, ensure_ascii = False)
+        prepareIDF(args)
     elif args.action == "keyword":
         return getKeyWords(args)
     elif args.action == "cooccurrence":
@@ -70,36 +80,41 @@ def main(args):
     else:
         raise ValueError("Unknown action [%s]" % args.action)
 
-def getArguments(args):
-    """Get arguments from args
+def prepareNLTK(_):
+    """Prepare for nltk
     """
-    parser = ArgumentParser(prog = "newsanalyzer", description = "News Analyzer For WanXuanAo")
-    parser.add_argument("--debug", dest = "debug", default = False, action = "store_true", help = "Enable debug mode")
-    subParsers = parser.add_subparsers(dest = "action")
-    # Prepare
-    _ = subParsers.add_parser("prepare-nltk", help = "Prepare nltk")
-    _ = subParsers.add_parser("prepare-idf", help = "Prepare idf directory")
-    # keyword
-    keywordParser = subParsers.add_parser("keyword", help = "Run keyword analyzer")
-    keywordParser.add_argument("-i", "--input", dest = "input", required = True, help = "Input excel file")
-    keywordParser.add_argument("--text-title-input", dest = "textTitleInput", help = "The text title input")
-    keywordParser.add_argument("--text-content-input", dest = "textContentInput", help = "The text content input")
-    keywordParser.add_argument("--output-title", dest = "outputTitle", default = "~/Desktop/keywords-title.txt", help = "Mined from title output file")
-    keywordParser.add_argument("--output-content", dest = "outputContent", default = "~/Desktop/keywords-content.txt", help = "Mined from content output file")
-    # Cooccurrence
-    cooccurrenceParser = subParsers.add_parser("cooccurrence", help = "Run co-occurrence analyzer")
-    cooccurrenceParser.add_argument("-i", "--input", dest = "input", required = True, help = "Input excel file")
-    cooccurrenceParser.add_argument("--text-content-input", dest = "textContentInput", help = "The text content input")
-    cooccurrenceParser.add_argument("-o", "--output", dest = "output", default = "~/Desktop/cooccurrence.txt", help = "Output file")
-    cooccurrenceParser.add_argument("words", nargs = "*", help = "The words")
-    # Cooccurrence entity
-    cooccurrenceEntityParser = subParsers.add_parser("cooccurrence-entity", help = "Run co-occurrence entity analyzer")
-    cooccurrenceEntityParser.add_argument("-i", "--input", dest = "input", required = True, help = "Input excel file")
-    cooccurrenceEntityParser.add_argument("--text-content-input", dest = "textContentInput", help = "The text content input")
-    cooccurrenceEntityParser.add_argument("-o", "--output", dest = "output", default = "~/Desktop/cooccurrence-entity.txt", help = "Output file")
-    cooccurrenceEntityParser.add_argument("words", nargs = "*", help = "The words")
-    # Done
-    return parser.parse_args(args)
+    logger.info("Start prepare nltk data")
+    nltk.download()
+
+def prepareIDF(args):
+    """Prepare for idf
+    """
+    logger.info("Start prepare idf directory (by calculating on nltk reuters corpus)")
+    # Count word per paragraph
+    counter = Counter()
+    paragraphCount = 0
+    for paras in nltk.corpus.reuters.paras():
+        words = set()
+        for sentence in paras:
+            for i in range(len(sentence)):
+                for j in range(1, args.nGram + 1):
+                    terms = [ x.lower() for x in sentence[i: i+j] ]
+                    if len(terms) != j:
+                        break
+                    if len(terms) == 1:
+                        words.add(terms[0])
+                    else:
+                        words.add(tuple(terms))
+        for word in words:
+            counter[word] += 1
+        paragraphCount += 1
+    # Calculate IDF score
+    idf = {}
+    for word, count in counter.iteritems():
+        if count > 3:
+            idf[word] = math.log(float(paragraphCount) / float(count))
+    with open(IDFDictFilename, "wb") as fd:
+        json.dump([ {"w": k, "v": v } for k, v in idf.iteritems() ], fd, ensure_ascii = False)
 
 def loadNews(excelInput):
     """Load news
@@ -176,7 +191,7 @@ def getKeyWords(args):
     analyzer = NewsAnalyzer(excelInput.countries, excelInput.regions, excelInput.provinces, excelInput.cities)
     analyzer.prepare()
     logger.info("Start analyze keywords")
-    return analyzer.getKeywords(news, normalizeFilename(args.outputTitle), normalizeFilename(args.outputContent))
+    return analyzer.getKeywords(args.nGram, news, normalizeFilename(args.outputTitle), normalizeFilename(args.outputContent))
 
 def cooccurrence(args):
     """Get cooccurrence
@@ -206,7 +221,7 @@ def cooccurrence(args):
                 keywords.append(NamedKeyword(",".join(words), words))
     # Run
     logger.info("Start analyze co-occurrence on words: %s", "|".join([ x.name for x in keywords ]))
-    return analyzer.cooccurrence(news, keywords, normalizeFilename(args.output))
+    return analyzer.cooccurrence(args.nGram, news, keywords, normalizeFilename(args.output))
 
 def cooccurrenceEntity(args):
     """Get cooccurrence entity

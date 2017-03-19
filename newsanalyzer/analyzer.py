@@ -15,9 +15,10 @@ import logging
 from sets import Set
 from collections import Counter
 
-from trie import TrieTree
-from spec import IDFDictFilename, MissingValueIDF, DropWords, KeyCountry, KeyRegion, KeyProvince, KeyCity
-from utils import nltk, json
+from .trie import TrieTree
+from .spec import IDFDictFilename, MissingValueIDF, DropWords, KeyCountry, KeyRegion, KeyProvince, KeyCity
+from .utils import nltk, json
+from .excelio import KeywordResultWriter, CooccurrenceResultWriter, CooccurrenceEntityResultWriter
 
 PunctuationRegex = re.compile(r"""^[\!\"\#\$\%\&\'\(\)\*\+\,\-\.\/\:\;\<\=\>\?\@\[\\\]\^\_\`\{\|\}\~]+$""")
 
@@ -93,8 +94,14 @@ class NewsAnalyzer(object):
         """Load idf dict
         """
         self.logger.info("Load IDF Dictionary")
+        idf = {}
         with open(IDFDictFilename, "rb") as fd:
-            return { k: v for (k, v) in json.load(fd) }
+            for item in json.load(fd):
+                w, v = item["w"], item["v"]
+                if isinstance(w, list):
+                    w = tuple(w)
+                idf[w] = v
+        return idf
 
     def loadStopwordSet(self):
         """Load stop word set
@@ -113,7 +120,21 @@ class NewsAnalyzer(object):
             # Good
             yield word
 
-    def getKeywords(self, newsList, titleFile, contentFile):
+    def groupByTermsCount(self, counter):
+        """Group by terms count
+        """
+        counters = {}
+        for term, count in counter.iteritems():
+            if isinstance(term, tuple):
+                termCount = len(term)
+            else:
+                termCount = 1
+            if termCount not in counters:
+                counters[termCount] = Counter()
+            counters[termCount][term] = count
+        return counters
+
+    def getKeywords(self, nGram, newsList, titleFile, contentFile):
         """Get the keywords list
         """
         # Load idf
@@ -127,33 +148,27 @@ class NewsAnalyzer(object):
             if news.title:
                 # Title
                 words = list(self.tokenize(news.title, stopwords))
-                # Single
-                for word in words:
-                    titleTF[word] += 1
-                # Double
-                for i in xrange(0, len(words) - 1):
-                    titleTF[(words[i].lower(), words[i + 1].lower())] += 1
-                # Triple
-                for i in xrange(0, len(words) - 2):
-                    titleTF[(words[i].lower(), words[i + 1].lower(), words[i + 2].lower())] += 1
-                # Four
-                for i in xrange(0, len(words) - 3):
-                    titleTF[(words[i].lower(), words[i + 1].lower(), words[i + 2].lower(), words[i + 3].lower())] += 1
+                for i in range(len(words)):
+                    for j in range(1, nGram + 1):
+                        terms = words[i:i+j]
+                        if len(terms) != j:
+                            break
+                        if j == 1:
+                            titleTF[terms[0]] += 1
+                        else:
+                            titleTF[tuple(terms)] += 1
             if news.content:
                 # Content
                 words = list(self.tokenize(news.content, stopwords))
-                # Single
-                for word in words:
-                    contentTF[word] += 1
-                # Double
-                for i in xrange(0, len(words) - 1):
-                    contentTF[(words[i].lower(), words[i + 1].lower())] += 1
-                # Triple
-                for i in xrange(0, len(words) - 2):
-                    contentTF[(words[i].lower(), words[i + 1].lower(), words[i + 2].lower())] += 1
-                # Four
-                for i in xrange(0, len(words) - 3):
-                    contentTF[(words[i].lower(), words[i + 1].lower(), words[i + 2].lower(), words[i + 3].lower())] += 1
+                for i in range(len(words)):
+                    for j in range(1, nGram + 1):
+                        terms = words[i:i+j]
+                        if len(terms) != j:
+                            break
+                        if j == 1:
+                            contentTF[terms[0]] += 1
+                        else:
+                            contentTF[tuple(terms)] += 1
         # Get tf-idf
         titleKeywords, contentKeywords = {}, {}
         for word, tf in titleTF.iteritems():
@@ -162,30 +177,28 @@ class NewsAnalyzer(object):
             contentKeywords[word] = tf * idf.get(word, MissingValueIDF)
         # Write out
         self.logger.info("Write output")
-        with open(titleFile, "wb") as fd:
-            print >>fd, "\t".join([ u"关键词", u"单词个数", u"TF-IDF" ])
-            for word, score in sorted(titleKeywords.iteritems(), key = lambda (k, v): v, reverse = True)[: 2000]:
-                if not isinstance(score, float):
-                    continue
-                if isinstance(word, (list, tuple)):
-                    length = len(word)
-                    word = " ".join(word)
-                else:
-                    length = 1
-                print >>fd, "%s\t%d\t%.4f" % (word, length, score)
-        with open(contentFile, "wb") as fd:
-            print >>fd, "\t".join([ u"关键词", u"单词个数", u"TF-IDF" ])
-            for word, score in sorted(contentKeywords.iteritems(), key = lambda (k, v): v, reverse = True)[: 2000]:
-                if not isinstance(score, float):
-                    continue
-                if isinstance(word, (list, tuple)):
-                    length = len(word)
-                    word = " ".join(word)
-                else:
-                    length = 1
-                print >>fd, "%s\t%d\t%.4f" % (word, length, score)
+        with open(titleFile + ".csv", "wb") as fd:
+            titleWriter = KeywordResultWriter(fd)
+            for termCount, termCounter in sorted(self.groupByTermsCount(titleKeywords).iteritems(), key = lambda (k,v): k):
+                for term, count in termCounter.most_common(200):
+                    titleWriter.write({
+                        titleWriter.FieldKeyword: " ".join(term) if isinstance(term, tuple) else term ,
+                        titleWriter.FieldTermsCount: termCount,
+                        titleWriter.FieldTFIDF: count,
+                        titleWriter.FieldFrequency: titleTF[term],
+                        })
+        with open(contentFile + ".csv", "wb") as fd:
+            contentWriter = KeywordResultWriter(fd)
+            for termCount, termCounter in sorted(self.groupByTermsCount(contentKeywords).iteritems(), key = lambda (k,v): k):
+                for term, count in termCounter.most_common(200):
+                    contentWriter.write({
+                        contentWriter.FieldKeyword: " ".join(term) if isinstance(term, tuple) else term ,
+                        contentWriter.FieldTermsCount: termCount,
+                        contentWriter.FieldTFIDF: count,
+                        contentWriter.FieldFrequency: contentTF[term],
+                        })
 
-    def cooccurrence(self, newsList, keywords, outputFile):
+    def cooccurrence(self, nGram, newsList, keywords, outputFile):
         """Analyze the news cooccurrence words
         Args:
             newsList([ News ]): The news
@@ -232,27 +245,32 @@ class NewsAnalyzer(object):
                         # Good
                         counter[term] += 1
                         continuousTerms.append(term)
-                        if len(continuousTerms) > 4:
+                        if len(continuousTerms) > nGram:
                             del continuousTerms[0]
-                        for i in range(4):
+                        for i in range(nGram):
                             if len(continuousTerms) - i <= 1:
                                 break
+
                             counter[tuple(continuousTerms[i:])] += 1
         # Get for each trunk
         self.logger.info("Write output")
-        with open(outputFile, "wb") as fd:
-            print >>fd, "\t".join([ u"关键词", u"相关词汇", u"单词个数", u"TF-IDF" ])
+        with open(outputFile + ".csv", "wb") as fd:
+            writer = CooccurrenceResultWriter(fd)
             for keywordName, counter in keywords.iteritems():
-                terms = {}
+                # Get idf
+                termsIDF = {}
                 for term, tf in counter.iteritems():
-                    terms[term] = tf * idf.get(term, MissingValueIDF)
-                for word, score in sorted(terms.iteritems(), key = lambda (k, v): v, reverse = True)[: 500]:
-                    if isinstance(word, (list, tuple)):
-                        length = len(word)
-                        word = " ".join(word)
-                    else:
-                        length = 1
-                    print >>fd, "%s\t%s\t%d\t%.4f" % (keywordName, word, length, score)
+                    termsIDF[term] = tf * idf.get(term, MissingValueIDF)
+                # Write
+                for termCount, termCounter in sorted(self.groupByTermsCount(termsIDF).iteritems(), key = lambda (k, v): k):
+                    for word, count in termCounter.most_common(200):
+                        writer.write({
+                            writer.FieldKeyword: keywordName,
+                            writer.FieldCoword: " ".join(word) if isinstance(word, tuple) else word,
+                            writer.FieldTermsCount: termCount,
+                            writer.FieldTFIDF: count,
+                            writer.FieldFrequency: counter[word]
+                            })
 
     def cooccurrenceEntity(self, newsList, keywords, outputFile):
         """Analyze the news cooccurrence words
@@ -314,31 +332,56 @@ class NewsAnalyzer(object):
                         ents[entType][key] += value
         # Write out
         self.logger.info("Write output")
-        with open(outputFile, "wb") as fd:
-            print >>fd, "\t".join([ u"关键词", u"相关实体类型", u"相关实体", u"实体出现次数" ])
+        with open(outputFile + ".csv", "wb") as fd:
+            writer = CooccurrenceEntityResultWriter(fd)
             # Country
             if keyword2Entities[None].get(KeyCountry):
-                for key, value in keyword2Entities[None][KeyCountry].most_common()[: 100]:
-                    print >>fd, "Global\t%s\t%s\t%d" % (KeyCountry, key, value)
+                for key, value in keyword2Entities[None][KeyCountry].most_common()[: 200]:
+                    writer.write({
+                        writer.FieldKeyword: "Global",
+                        writer.FieldEntityType: KeyCountry,
+                        writer.FieldEntity: key,
+                        writer.FieldFrequency: value,
+                    })
             # Region
             if keyword2Entities[None].get(KeyRegion):
-                for key, value in keyword2Entities[None][KeyRegion].most_common()[: 100]:
-                    print >>fd, "Global\t%s\t%s\t%d" % (KeyRegion, key, value)
+                for key, value in keyword2Entities[None][KeyRegion].most_common()[: 200]:
+                    writer.write({
+                        writer.FieldKeyword: "Global",
+                        writer.FieldEntityType: KeyRegion,
+                        writer.FieldEntity: key,
+                        writer.FieldFrequency: value,
+                    })
             # Province
             if keyword2Entities[None].get(KeyProvince):
-                for key, value in keyword2Entities[None][KeyProvince].most_common()[: 100]:
-                    print >>fd, "Global\t%s\t%s\t%d" % (KeyProvince, key, value)
+                for key, value in keyword2Entities[None][KeyProvince].most_common()[: 200]:
+                    writer.write({
+                        writer.FieldKeyword: "Global",
+                        writer.FieldEntityType: KeyProvince,
+                        writer.FieldEntity: key,
+                        writer.FieldFrequency: value,
+                    })
             # City
             if keyword2Entities[None].get(KeyCity):
-                for key, value in keyword2Entities[None][KeyCity].most_common()[: 100]:
-                    print >>fd, "Global\t%s\t%s\t%d" % (KeyCity, key, value)
+                for key, value in keyword2Entities[None][KeyCity].most_common()[: 200]:
+                    writer.write({
+                        writer.FieldKeyword: "Global",
+                        writer.FieldEntityType: KeyCity,
+                        writer.FieldEntity: key,
+                        writer.FieldFrequency: value,
+                    })
             # Keywords
             for keyword, entities in keyword2Entities.iteritems():
                 if not keyword:
                     continue
                 for entType, counter in entities.iteritems():
-                    for key, value in counter.most_common()[: 100]:
-                        print >>fd, "%s\t%s\t%s\t%d" % (keyword, entType, key, value)
+                    for key, value in counter.most_common()[: 200]:
+                        writer.write({
+                            writer.FieldKeyword: keyword,
+                            writer.FieldEntityType: entType,
+                            writer.FieldEntity: key,
+                            writer.FieldFrequency: value,
+                            })
 
     def iterTerms(self, newsList, stopwords, perParagraph = False):
         """Iterate terms per news or per paragraph

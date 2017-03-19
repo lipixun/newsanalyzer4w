@@ -9,8 +9,12 @@
 
 """
 
+import sys
+reload(sys)
+sys.setdefaultencoding("utf8")
+
 from sys import argv
 
-from main import main
+from .main import main
 
 main(argv[1:])

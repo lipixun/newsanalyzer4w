@@ -11,10 +11,11 @@
 
 import logging
 
+from csv import DictWriter
 from openpyxl import load_workbook
 
-from spec import SheetCountry, SheetRegion, SheetProvince, SheetCity, SheetNews
-from model import Country, Region, Province, City, News
+from .spec import SheetCountry, SheetRegion, SheetProvince, SheetCity, SheetNews
+from .model import Country, Region, Province, City, News
 
 class ExcelInput(object):
     """The excel input
@@ -167,3 +168,77 @@ class ExcelInput(object):
             content = self.normalize(sheet.cell(row = i, column = 7).value)
             if title and content:
                 self.news.append(News(title.strip(), content.strip()))
+
+class KeywordResultWriter(object):
+    """The keyword result writer
+    """
+    FieldKeyword    = u"关键词"
+    FieldTermsCount = u"单词个数"
+    FieldTFIDF      = u"TF-IDF"
+    FieldFrequency  = u"出现次数"
+
+    def __init__(self, outStream):
+        """Create a new KeywordResultWriter
+        """
+        self.writer = DictWriter(outStream, fieldnames=[
+            self.FieldKeyword,
+            self.FieldTermsCount,
+            self.FieldTFIDF,
+            self.FieldFrequency,
+            ])
+        self.writer.writeheader()
+
+    def write(self, data):
+        """Write data
+        """
+        self.writer.writerow(data)
+
+class CooccurrenceResultWriter(object):
+    """The cooccurrence result writer
+    """
+    FieldKeyword    = u"关键词"
+    FieldCoword     = u"相关词汇"
+    FieldTermsCount = u"单词个数"
+    FieldTFIDF      = u"TF-IDF"
+    FieldFrequency  = u"出现次数"
+
+    def __init__(self, outStream):
+        """Create a new KeywordResultWriter
+        """
+        self.writer = DictWriter(outStream, fieldnames=[
+            self.FieldKeyword,
+            self.FieldCoword,
+            self.FieldTermsCount,
+            self.FieldTFIDF,
+            self.FieldFrequency,
+            ])
+        self.writer.writeheader()
+
+    def write(self, data):
+        """Write data
+        """
+        self.writer.writerow(data)
+
+class CooccurrenceEntityResultWriter(object):
+    """The cooccurrence result writer
+    """
+    FieldKeyword    = u"关键词"
+    FieldEntityType = u"相关实体类型"
+    FieldEntity     = u"相关实体"
+    FieldFrequency  = u"出现次数"
+
+    def __init__(self, outStream):
+        """Create a new KeywordResultWriter
+        """
+        self.writer = DictWriter(outStream, fieldnames=[
+            self.FieldKeyword,
+            self.FieldEntityType,
+            self.FieldEntity,
+            self.FieldFrequency,
+            ])
+        self.writer.writeheader()
+
+    def write(self, data):
+        """Write data
+        """
+        self.writer.writerow(data)
